@@ -56,12 +56,41 @@ function parseBoard(text) {
   return { text, lines, cards, sections };
 }
 function pick(data) { return Object.fromEntries(FIELDS.map(k => [k, data[k]])); }
-function normalize(data) {
+function isDateValue(value) {
+  if (!value || typeof value !== 'object') return false;
+  try { Date.prototype.getTime.call(value); return true; } catch (_) { return false; }
+}
+function calendarDay(value, key) {
+  if (isDateValue(value)) {
+    if (!Number.isFinite(Date.prototype.getTime.call(value))) throw Error(`日期格式无效：${key}（无效日期对象）`);
+    value = Date.prototype.toISOString.call(value);
+  }
+  const match = typeof value === 'string' && value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:[Zz]|[+-](\d{2}):?(\d{2}))?)?$/);
+  if (!match) throw Error(`日期格式无效：${key}（${value == null || value === '' ? '空值' : String(value).slice(0,32)}）`);
+  const [,y,m,d,h,min,s,zh,zm] = match;
+  const year=Number(y), month=Number(m), day=Number(d);
+  const days=[31,year%4===0&&(year%100!==0||year%400===0)?29:28,31,30,31,30,31,31,30,31,30,31];
+  if(month<1||month>12||day<1||day>days[month-1]||Number(h)>23||Number(min)>59||Number(s)>59||Number(zh)>23||Number(zm)>59) {
+    throw Error(`日期格式无效：${key}（${String(value).slice(0,32)}）`);
+  }
+  return `${y}-${m}-${d}`;
+}
+function sourceDay(frontmatter,key) {
+  const field=frontmatter.match(new RegExp(`^(?:${key}|"${key}"|'${key}'):[ \\t]*(.*)$`,'m'));
+  if (!field) return undefined;
+  let scalar=field[1].trim();
+  const quoted=scalar.match(/^(['"])(.*?)\1\s*(?:#.*)?$/);
+  scalar=quoted?quoted[2]:scalar.replace(/\s+#.*$/,'').trim();
+  scalar=scalar.replace(/^!!timestamp\s+/,'');
+  // Prefer the written calendar day over UTC conversion of a YAML timestamp.
+  return /^\d{4}-\d{2}-\d{2}(?:$|[Tt ])/.test(scalar)?scalar:undefined;
+}
+function normalize(data, frontmatter='') {
   const d = {...data};
   for (const k of ['创建日期', '更新日期']) {
-    if (d[k] instanceof Date) d[k] = d[k].toISOString().slice(0,10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d[k] || '') || Number.isNaN(Date.parse(d[k]))) throw Error(`日期格式无效：${k}`);
+    d[k] = calendarDay(sourceDay(frontmatter,k) ?? d[k],k);
   }
+  for (const k of ['下次跟进','截止日期']) if (isDateValue(d[k])) d[k]=calendarDay(sourceDay(frontmatter,k)??d[k],k);
   if (typeof d['任务'] !== 'string' || !d['任务'].trim() || /[\r\n]/.test(d['任务'])) throw Error('任务标题必须为一行非空文字');
   if (!STATUSES.includes(d['状态'])) throw Error(`状态无效：${d['状态']}`);
   if (!['看板列','插件归档'].includes(d['归档区'])) throw Error('归档区无效');
@@ -81,12 +110,12 @@ function readNote(text, parseYaml, newTitle) {
       '项目':'', '优先级':'', '下一步':'', '下次跟进':null, '截止日期':null, ...data};
   }
   if (!/^wt-[a-zA-Z0-9-]+$/.test(data['任务ID'] || '')) throw Error('任务ID缺失或无效');
-  return { id: data['任务ID'], data: normalize(data), baseline: base ? JSON.parse(base[1]) : null,
+  return { id: data['任务ID'], data: normalize(data,match?.[1]), baseline: base ? JSON.parse(base[1]) : null,
     body: text.slice(match ? match[0].length : 0).replace(BASE_RE, '').trimEnd(), text };
 }
 function writeNote(note, data, stringifyYaml) {
   const next = { ...data, '任务ID': note.id, '类型': '个人任务', '数据版本': 1 };
-  for (const k of ['下次跟进','截止日期']) if (next[k] instanceof Date) next[k] = next[k].toISOString().slice(0,10);
+  for (const k of ['下次跟进','截止日期']) if (isDateValue(next[k])) next[k] = calendarDay(next[k],k);
   const baseline = {...pick(next), _optional: Object.fromEntries(OPTIONAL.map(k => [k,next[k] ?? '']))};
   const marker = `<!-- wayne-task-baseline ${JSON.stringify(baseline)} -->`;
   return `---\n${stringifyYaml(next).trim()}\n---\n${note.body || '\n在这里记录跟进细节、链接和结果。'}\n\n${marker}\n`;
@@ -201,7 +230,7 @@ function fileName(record) {
 }
 
 module.exports = { BOARD, FOLDER, COLUMNS, STATUSES, FIELDS, OPTIONAL, ID_RE, DATE_RE,
-  today, uid, same, pick, parseBoard, readNote, writeNote, mergeRecords, renderBoard, fileName };
+  today, uid, same, pick, isDateValue, calendarDay, parseBoard, readNote, writeNote, mergeRecords, renderBoard, fileName };
 
   return module.exports;
 })();
@@ -217,11 +246,11 @@ const M = require('./task-model');
 
 // Both Bases table and board write these note properties. No Kanban mirror.
 module.exports = class TaskStore {
-  constructor(plugin) {this.plugin=plugin;this.app=plugin.app;this.timers=new Map();this.closed=false;}
+  constructor(plugin) {this.plugin=plugin;this.app=plugin.app;this.timers=new Map();this.closed=false;this.emptyProbe=null;this.emptyNoticeShown=false;}
   async start() {
     this.plugin.registerEvent(this.app.vault.on('modify',f=>this.schedule(f)));
     this.plugin.registerEvent(this.app.vault.on('create',f=>this.schedule(f)));
-    this.plugin.register(()=>{this.closed=true;for(const t of this.timers.values())clearTimeout(t);});
+    this.plugin.register(()=>{this.closed=true;for(const t of this.timers.values())clearTimeout(t);if(this.emptyProbe)clearTimeout(this.emptyProbe);});
     this.plugin.addCommand({id:'new-personal-task',name:'新增个人任务',callback:()=>this.promptCreate('未开始')});
     this.plugin.addCommand({id:'open-personal-tasks',name:'打开个人任务（表格 / 看板）',callback:()=>
       this.app.workspace.openLinkText('Wayne to-do list/个人任务多维表.base','',false)});
@@ -230,11 +259,51 @@ module.exports = class TaskStore {
     });
   }
   isTask(file) {return file?.path?.startsWith(M.FOLDER+'/') && file.extension==='md';}
+  inspectEmpty(view) {
+    if(this.emptyProbe)clearTimeout(this.emptyProbe);
+    if(view.data?.data?.length){this.emptyNoticeShown=false;return;}
+    if(this.closed||this.emptyNoticeShown)return;
+    this.emptyProbe=setTimeout(async()=>{
+      this.emptyProbe=null;
+      if(this.closed||this.emptyNoticeShown||view.root.isConnected===false||view.data?.data?.length)return;
+      try {
+        const all=this.app.vault.getMarkdownFiles().filter(f=>/(^|\/)Wayne to-do list\/任务\/[^/]+\.md$/i.test(f.path));
+        const active=this.app.workspace.getActiveFile?.();
+        const activePath=active?.path||'';
+        const activeFolder=active?.parent?.path ?? (activePath.includes('/')?activePath.slice(0,activePath.lastIndexOf('/')):'');
+        const folder=activeFolder.endsWith('Wayne to-do list')?activeFolder+'/任务':all[0]?.path.slice(0,all[0].path.lastIndexOf('/'))||M.FOLDER;
+        const indexed=all.filter(f=>f.path.startsWith(folder+'/'));
+        let diskCount='未读取';
+        if(typeof this.app.vault.adapter?.list==='function')try{
+          diskCount=(await this.app.vault.adapter.list(folder)).files.filter(p=>p.toLowerCase().endsWith('.md')).length;
+        }catch(_){diskCount='目录不可读';}
+        const metadata=indexed.map(f=>this.app.metadataCache?.getFileCache(f)?.frontmatter).filter(Boolean);
+        const typed=metadata.filter(fm=>fm['类型']==='个人任务');
+        const visible=typed.filter(fm=>fm['移出看板']!==true);
+        const typeExample=(JSON.stringify(metadata[0]?.['类型'])||'字段缺失').slice(0,100);
+        let filter='未读取';
+        const basePath=folder.slice(0,folder.lastIndexOf('/'))+'/个人任务多维表.base';
+        if(typeof this.app.vault.adapter?.read==='function')try{
+          filter=JSON.stringify(parseYaml(await this.app.vault.adapter.read(basePath))?.filters).slice(0,300);
+        }catch(_){filter='数据库配置不可读';}
+        if(this.closed||view.root.isConnected===false||view.data?.data?.length)return;
+        const info={taskFolder:folder,diskCount,indexed:indexed.length,metadata:metadata.length,typeMatches:typed.length,typeExample,notRemoved:visible.length,activeFolder,filters:filter};
+        console.info('[Wayne task board empty-query]',JSON.stringify(info));
+        new Notice(`任务看板诊断\n文件：${diskCount}；索引：${indexed.length}；类型匹配：${typed.length}；未移出：${visible.length}\n类型示例：${typeExample}\n任务目录：${folder}\n当前笔记目录：${activeFolder||(active?'库根目录':'无活动笔记')}\n筛选：${filter}`,20000);
+        this.emptyNoticeShown=true;
+      }catch(error){
+        if(!this.closed&&view.root.isConnected!==false&&!view.data?.data?.length){
+          this.emptyNoticeShown=true;
+          new Notice('任务看板诊断未完成：'+error.message,12000);
+        }
+      }
+    },3000);
+  }
   schedule(file) {
     if(this.closed||!this.isTask(file))return;
     if(this.timers.has(file.path))clearTimeout(this.timers.get(file.path));
     this.timers.set(file.path,setTimeout(()=>{
-      this.timers.delete(file.path);this.maintain(file).catch(e=>new Notice('任务属性未更新：'+e.message,10000));
+      this.timers.delete(file.path);this.maintain(file).catch(e=>new Notice(`任务属性未更新：${file.basename || file.path}；${e.message}`,10000));
     },600));
   }
   async maintain(file) {
@@ -243,7 +312,7 @@ module.exports = class TaskStore {
       if(/^(<<<<<<< |=======\s*$|>>>>>>> )/m.test(current))throw Error('任务存在 Git 合并冲突');
       const n=M.readNote(current,parseYaml,file.basename || file.path.split('/').pop().replace(/\.md$/,''));
       const b=n.baseline;
-      const optional=v=>v instanceof Date?v.toISOString().slice(0,10):v??'';
+      const optional=v=>M.isDateValue(v)?M.calendarDay(v,'可选日期'):v??'';
       const changed=b && (M.FIELDS.filter(k=>!['更新日期','创建日期'].includes(k)).some(k=>!M.same(n.data[k],b[k])) ||
         M.OPTIONAL.some(k=>!M.same(optional(n.data[k]),optional(b._optional?.[k]))));
       if(b&&!changed)return current;
@@ -346,6 +415,7 @@ module.exports = class TaskBoard extends BasesView {
       }
     }
     this.root.scrollLeft=left;
+    this.store.inspectEmpty?.(this);
   }
   card(body,entry,status) {
     const card=body.createDiv({cls:'wayne-task-card'});
@@ -569,9 +639,14 @@ module.exports = class WayneKanbanTimestamps extends Plugin {
     this.taskStore = new TaskStore(this);
     const {BasesView, Notice} = require('obsidian');
     if (BasesView && typeof this.registerBasesView === 'function') {
-      this.registerBasesView('wayne-task-board', {
+      const register=()=>this.registerBasesView('wayne-task-board', {
         name: '个人任务看板', icon: 'columns-3',
         factory: (controller, container) => new TaskBoard(controller, container, this.taskStore),
+      });
+      const registered=register();
+      if(registered===false)this.app.workspace.onLayoutReady(()=>{
+        if(this.taskStore.closed)return;
+        if(register()===false)new Notice('任务看板视图未注册：请确认核心插件“多维表格”已开启，然后重新启用本插件。',12000);
       });
     } else new Notice('表格可用；同文件看板需要 Obsidian 1.10.2 或更新版本。', 10000);
     await this.taskStore.start();

@@ -14,6 +14,10 @@ Swipe horizontally between status columns. A column fits the available note widt
 
 The `wayne-task-board` view is registered before asynchronous filesystem work, so restoring a mobile Bases tab does not depend on finding one fixed `.base` file during startup. After updating from a version that showed an unknown view type, restart Obsidian and reopen the board note.
 
+YAML date strings, date objects from another JavaScript context, and ISO timestamps are supported. The calendar day written in the source frontmatter takes precedence over timezone conversion. Invalid or missing required dates remain errors; the plugin does not replace them with today's date. Opening unchanged migrated tasks preserves their original text.
+
+If a board remains empty for three seconds, a local diagnostic notice reports the record folder, disk/index counts, matching metadata counts, and the saved global filter. It is shown once per continuous empty state and sends no data over the network. This notice is diagnostic only: it does not broaden filters or change task data.
+
 ## Privacy
 
 This repository is designed to be publishable with only fake examples. It contains no private task data or credentials, and the plugin makes no network requests.
