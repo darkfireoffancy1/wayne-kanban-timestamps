@@ -1,0 +1,9 @@
+{
+  "id": "wayne-kanban-timestamps",
+  "name": "Wayne Kanban Timestamps",
+  "version": "3.0.1",
+  "minAppVersion": "1.10.2",
+  "description": "One Bases file with editable table and Kanban views over the same task-note properties.",
+  "author": "Wayne",
+  "isDesktopOnly": false
+}
