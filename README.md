@@ -8,6 +8,10 @@ Create `Wayne to-do list/个人任务多维表.base` with a view whose type is `
 
 The folder and property names are currently fixed to the original workflow. The plugin does not include any task notes. Only one sync tool should manage a vault at a time.
 
+## Mobile layout
+
+Swipe horizontally between status columns. A column fits the available note width, including when embedded. Use the always-visible status menu to move a task on touch devices; desktop drag-and-drop remains available. Titles wrap, and edit, add, and status controls use larger touch targets.
+
 ## Privacy
 
 This repository is designed to be publishable with only fake examples. It contains no private task data or credentials, and the plugin makes no network requests.

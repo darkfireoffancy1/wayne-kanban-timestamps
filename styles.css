@@ -21,4 +21,26 @@
 .wayne-task-home.markdown-preview-view .markdown-preview-sizer{max-width:none!important}
 .wayne-task-home .markdown-embed{border-left:0;padding-left:0}
 .wayne-task-home .bases-embed{max-width:100%;overflow:hidden}
-@media(max-width:600px){.wayne-bases-board{padding:8px;gap:10px}.wayne-task-column{flex-basis:84vw}}
+/* Measure lanes against the embed, not the whole screen. Keep vertical page scroll native. */
+body .wayne-bases-board{width:100%;max-width:100%;min-width:0}
+.wayne-bases-board .wayne-task-column,.wayne-bases-board .wayne-task-card{box-sizing:border-box}
+.wayne-bases-board .wayne-task-title,.wayne-bases-board .wayne-task-next,.wayne-bases-board .wayne-task-meta{overflow-wrap:anywhere}
+.wayne-task-editor input{box-sizing:border-box}
+@media(max-width:800px), (pointer:coarse){
+  body .wayne-bases-board{padding:8px 4px;gap:12px;scroll-snap-type:x proximity;scroll-padding-inline:4px;-webkit-overflow-scrolling:touch}
+  body .wayne-bases-board .wayne-task-column:not(.is-collapsed){flex:0 0 calc(100% - 20px);min-width:0;scroll-snap-align:start}
+  body .wayne-bases-board .wayne-task-column.is-collapsed{flex:0 0 64px;min-width:64px;scroll-snap-align:start}
+  .wayne-bases-board .wayne-task-column-body{padding:8px;min-width:0}
+  .wayne-bases-board .wayne-task-card{padding:12px;min-width:0;cursor:default}
+  body .wayne-bases-board .wayne-task-title{min-height:44px;font-size:16px!important;line-height:1.6;touch-action:manipulation}
+  .wayne-bases-board .wayne-task-column-title{min-height:44px;font-size:16px}
+  .wayne-bases-board .wayne-task-dates,.wayne-bases-board .wayne-task-meta{font-size:12px;line-height:1.6}
+  .wayne-bases-board .wayne-task-next{font-size:14px;line-height:1.6}
+  body .wayne-bases-board .wayne-task-actions{opacity:1;visibility:visible;display:flex;gap:8px}
+  .wayne-bases-board .wayne-task-actions select,.wayne-bases-board .wayne-task-actions button{height:44px;min-height:44px;max-width:none;font-size:14px;touch-action:manipulation}
+  .wayne-bases-board .wayne-task-actions select{flex:1 1 0;min-width:0;width:0}
+  .wayne-bases-board .wayne-task-actions button{flex:0 0 auto;min-width:60px}
+  .wayne-bases-board .wayne-task-add{height:44px;min-height:44px;font-size:14px;white-space:normal;touch-action:manipulation}
+  .wayne-task-editor input{width:100%;min-height:44px;font-size:16px}
+  .wayne-task-editor button{min-height:44px;min-width:72px;font-size:16px;touch-action:manipulation}
+}

@@ -276,8 +276,9 @@ module.exports = class TaskStore {
   promptRename(file,title) {this.prompt('修改任务名称',title,value=>this.update(file,{'任务':value},{'任务':title}));}
   prompt(label,value,save) {
     const modal=new Modal(this.app);
+    modal.contentEl.addClass('wayne-task-editor');
     modal.contentEl.createEl('h3',{text:label});
-    const input=modal.contentEl.createEl('input',{type:'text',value});input.style.width='100%';
+    const input=modal.contentEl.createEl('input',{type:'text',value,attr:{'aria-label':label}});input.style.width='100%';
     const button=modal.contentEl.createEl('button',{text:'保存',cls:'mod-cta'});button.style.marginTop='12px';
     const submit=async()=>{button.disabled=true;try{await save(input.value);modal.close();}catch(e){new Notice(e.message);button.disabled=false;}};
     button.addEventListener('click',submit);input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();submit();}});
@@ -347,7 +348,9 @@ module.exports = class TaskBoard extends BasesView {
     this.root.scrollLeft=left;
   }
   card(body,entry,status) {
-    const card=body.createDiv({cls:'wayne-task-card'});card.draggable=true;
+    const card=body.createDiv({cls:'wayne-task-card'});
+    // On touch, native horizontal scrolling takes priority; the status menu moves cards.
+    card.draggable=!(typeof window.matchMedia==='function' && window.matchMedia('(pointer: coarse)').matches);
     const title=value(entry,'任务')||entry.file.basename;
     const open=card.createEl('button',{text:title,cls:'wayne-task-title'});
     open.addEventListener('click',()=>this.app.workspace.openLinkText(entry.file.path,'',false));
