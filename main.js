@@ -564,19 +564,20 @@ const BOARD_PATH = "Wayne to-do list/Wayne to-do list Kanban.md";
 
 module.exports = class WayneKanbanTimestamps extends Plugin {
   async onload() {
-    if (await this.app.vault.adapter.exists('Wayne to-do list/个人任务多维表.base')) {
-      // Release bundle contains the task model, store, and board.
-      this.taskStore = new TaskStore(this);
-      const {BasesView, Notice} = require('obsidian');
-      if (BasesView && typeof this.registerBasesView === 'function') {
-        this.registerBasesView('wayne-task-board', {
-          name: '个人任务看板', icon: 'columns-3',
-          factory: (controller, container) => new TaskBoard(controller, container, this.taskStore),
-        });
-      } else new Notice('表格可用；同文件看板需要 Obsidian 1.10.2 或更新版本。');
-      await this.taskStore.start();
-      return;
-    }
+    // Register synchronously, before any filesystem await: Bases may restore an
+    // embedded view while a mobile vault is still building its file index.
+    this.taskStore = new TaskStore(this);
+    const {BasesView, Notice} = require('obsidian');
+    if (BasesView && typeof this.registerBasesView === 'function') {
+      this.registerBasesView('wayne-task-board', {
+        name: '个人任务看板', icon: 'columns-3',
+        factory: (controller, container) => new TaskBoard(controller, container, this.taskStore),
+      });
+    } else new Notice('表格可用；同文件看板需要 Obsidian 1.10.2 或更新版本。', 10000);
+    await this.taskStore.start();
+
+    // Keep legacy date maintenance only for an actual Markdown Kanban, never
+    // use its presence as a condition for registering the Bases view.
     this.previousContent = null;
     this.pendingTimer = null;
     this.processing = false;

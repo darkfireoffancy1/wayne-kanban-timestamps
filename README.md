@@ -12,6 +12,8 @@ The folder and property names are currently fixed to the original workflow. The 
 
 Swipe horizontally between status columns. A column fits the available note width, including when embedded. Use the always-visible status menu to move a task on touch devices; desktop drag-and-drop remains available. Titles wrap, and edit, add, and status controls use larger touch targets.
 
+The `wayne-task-board` view is registered before asynchronous filesystem work, so restoring a mobile Bases tab does not depend on finding one fixed `.base` file during startup. After updating from a version that showed an unknown view type, restart Obsidian and reopen the board note.
+
 ## Privacy
 
 This repository is designed to be publishable with only fake examples. It contains no private task data or credentials, and the plugin makes no network requests.
