@@ -10,7 +10,9 @@ The folder and property names are currently fixed to the original workflow. The 
 
 ## Mobile layout
 
-Swipe horizontally between status columns. A column fits the available note width, including when embedded. Use the always-visible status menu to move a task on touch devices; desktop drag-and-drop remains available. Titles wrap, and edit, add, and status controls use larger touch targets.
+On phones, all status tabs and counts stay visible above a compact task list. Each row retains its creation/update dates; open the note by tapping its title, or use the row's **···** menu to read its full title and details, rename it, or change status. The footer adds a task and pages backward/forward. Page size adapts to the available viewport height and bottom navigation, so a status with hundreds of tasks does not create a long vertical page. Desktop keeps its multi-column board and drag-and-drop.
+
+Task actions use the folder of the actual query entries, including when a synced vault is nested inside another folder. Existing type/ID checks and expected-state protection remain in place. Switching status or resizing retains a valid page; background updates also clamp the page if tasks were removed or moved. On a very short landscape viewport, the host note is anchored once to fit a page; subsequent user scrolling is respected.
 
 The `wayne-task-board` view is registered before asynchronous filesystem work, so restoring a mobile Bases tab does not depend on finding one fixed `.base` file during startup. After updating from a version that showed an unknown view type, restart Obsidian and reopen the board note.
 

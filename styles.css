@@ -44,3 +44,40 @@ body .wayne-bases-board{width:100%;max-width:100%;min-width:0}
   .wayne-task-editor input{width:100%;min-height:44px;font-size:16px}
   .wayne-task-editor button{min-height:44px;min-width:72px;font-size:16px;touch-action:manipulation}
 }
+/* Mobile is a single bounded page: all statuses, compact rows, and a pager. */
+body .wayne-bases-board.is-mobile-compact{
+  display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:6px 4px!important;
+  height:var(--wayne-mobile-height,420px)!important;max-height:var(--wayne-mobile-height,420px)!important;
+  min-height:0!important;overflow:hidden;scroll-snap-type:none;box-sizing:border-box;
+}
+.is-mobile-compact .wayne-mobile-statuses{display:grid;gap:4px;flex:0 0 56px;min-width:0}
+.is-mobile-compact .wayne-mobile-status{
+  display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;
+  min-width:0;height:56px;min-height:44px;padding:4px 3px;white-space:normal;
+  border:1px solid var(--background-modifier-border);border-radius:9px;background:var(--background-secondary);
+  color:var(--text-muted);box-shadow:none;touch-action:manipulation;
+}
+.is-mobile-compact .wayne-mobile-status[aria-selected="true"]{background:var(--interactive-accent);border-color:var(--interactive-accent);color:var(--text-on-accent)}
+.wayne-mobile-status-label{display:flex;align-items:center;justify-content:center;min-height:24px;max-height:24px;font-size:11.5px;line-height:12px;text-align:center;overflow-wrap:anywhere}
+.wayne-mobile-status-count{font-size:13px;line-height:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.is-mobile-compact .wayne-mobile-list{display:flex;flex-direction:column;gap:6px;flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+.wayne-mobile-task{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:4px;flex:0 0 var(--wayne-mobile-row-height,64px);height:var(--wayne-mobile-row-height,64px);min-width:0;border:1px solid var(--background-modifier-border);border-radius:10px;background:var(--background-primary);overflow:hidden;box-sizing:border-box}
+.wayne-mobile-task-open{display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0;width:100%;height:100%;min-height:44px;padding:6px 9px!important;box-shadow:none!important;background:transparent!important;border:0!important;text-align:left;touch-action:manipulation}
+.wayne-mobile-task-title{display:block;max-width:100%;font-size:var(--font-text-size,16px);font-weight:500;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wayne-mobile-task-dates{display:block;max-width:100%;font-size:12px;line-height:16px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.wayne-mobile-task-more{height:44px;min-height:44px;width:44px;min-width:44px;padding:0!important;box-shadow:none!important;background:transparent!important;border:0!important;font-size:20px;touch-action:manipulation}
+.is-mobile-compact .wayne-mobile-footer{display:grid;grid-template-columns:60px 44px minmax(0,1fr) 44px;align-items:center;gap:4px;flex:0 0 44px;min-width:0}
+.wayne-mobile-footer button{height:44px;min-height:44px;min-width:0;padding:4px;font-size:14px;border-radius:8px;box-shadow:none;touch-action:manipulation}
+.wayne-mobile-page-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.wayne-mobile-empty{margin:auto;padding:12px;color:var(--text-muted);font-size:14px;text-align:center}
+body .wayne-bases-board.is-mobile-compact.is-short-viewport{gap:4px;padding:4px!important;margin-bottom:calc(var(--wayne-bottom-gap,72px) + 24px)}
+.is-mobile-compact.is-short-viewport .wayne-mobile-statuses{flex-basis:44px}
+.is-mobile-compact.is-short-viewport .wayne-mobile-status{height:44px;gap:0;padding:2px}
+.is-short-viewport .wayne-mobile-status-label{min-height:14px;max-height:14px;white-space:nowrap}
+.wayne-task-menu h3{font-size:18px;line-height:1.5;overflow-wrap:anywhere}
+.wayne-task-menu-dates{font-size:12px;line-height:1.6;color:var(--text-muted);overflow-wrap:anywhere}
+.wayne-task-menu-detail{margin-top:8px;line-height:1.6;overflow-wrap:anywhere}
+.wayne-task-menu label{display:flex;flex-direction:column;gap:6px;margin-top:16px}
+.wayne-task-menu select{width:100%;min-height:44px;font-size:16px}
+.wayne-task-menu-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.wayne-task-menu-actions button{flex:1;min-height:44px;font-size:15px;touch-action:manipulation}

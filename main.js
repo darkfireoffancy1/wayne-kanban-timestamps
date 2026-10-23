@@ -258,7 +258,7 @@ module.exports = class TaskStore {
       for(const f of this.app.vault.getMarkdownFiles())this.schedule(f);
     });
   }
-  isTask(file) {return file?.path?.startsWith(M.FOLDER+'/') && file.extension==='md';}
+  isTask(file) {return file?.extension==='md' && /(^|\/)Wayne to-do list\/任务\//.test(file.path||'');}
   inspectEmpty(view) {
     if(this.emptyProbe)clearTimeout(this.emptyProbe);
     if(view.data?.data?.length){this.emptyNoticeShown=false;return;}
@@ -333,15 +333,16 @@ module.exports = class TaskStore {
       if(patch['状态'] && patch['状态']!=='已归档')fm['归档区']='看板列';
     });
   }
-  async create(title,status='未开始') {
+  async create(title,status='未开始',folder=M.FOLDER) {
     title=title.trim();if(!title||/[\r\n]/.test(title))throw Error('请输入一行任务名称');
     if(!M.STATUSES.includes(status))throw Error('任务状态无效');
+    if(typeof folder!=='string'||folder.split('/').includes('..')||!(folder===M.FOLDER||folder.endsWith('/'+M.FOLDER)))throw Error('任务文件夹无效');
     const record={id:M.uid(),data:{'任务':title,'状态':status,'创建日期':M.today(),'更新日期':M.today(),
       '勾选':false,'归档区':'看板列','详情':'','移出看板':false,'项目':'','优先级':'','下一步':'','下次跟进':null,'截止日期':null}};
     const text=M.writeNote({id:record.id,body:''},record.data,stringifyYaml);
-    return this.app.vault.create(M.fileName(record),text);
+    return this.app.vault.create(folder+M.fileName(record).slice(M.FOLDER.length),text);
   }
-  promptCreate(status) {this.prompt('新增任务','',async title=>{await this.create(title,status);});}
+  promptCreate(status,folder=M.FOLDER) {this.prompt('新增任务','',async title=>{await this.create(title,status,folder);});}
   promptRename(file,title) {this.prompt('修改任务名称',title,value=>this.update(file,{'任务':value},{'任务':title}));}
   prompt(label,value,save) {
     const modal=new Modal(this.app);
@@ -364,7 +365,7 @@ const TaskBoard = (() => {
     if (name === './task-model') return TaskModel;
     throw new Error('Unexpected dependency: ' + name);
   };
-const {BasesView,Notice} = require('obsidian');
+const {BasesView,Notice,Modal,Platform} = require('obsidian');
 const M = require('./task-model');
 const TYPE='wayne-task-board';
 function value(entry,key) {const v=entry.getValue('note.'+key);return v&&v.isTruthy()?v.toString():'';}
@@ -374,7 +375,48 @@ module.exports = class TaskBoard extends BasesView {
     super(controller);this.type=TYPE;this.store=store;
     this.root=container.createDiv({cls:'wayne-bases-board'});this.dragged=null;
     this.archiveOpen=false;this.columnScroll=new Map();
-    this.register(()=>this.root.remove());
+    this.mobileStatus='未开始';this.mobilePages=new Map();this.mobilePageSize=1;this.fitFrame=null;this.closed=false;this.shortAutoFitted=false;
+    this.root.setAttribute?.('contenteditable','false');
+    this.onViewport=()=>this.queueFit();
+    if(typeof this.app?.workspace?.on==='function')this.registerEvent(this.app.workspace.on('layout-change',this.onViewport));
+    if(typeof window!=='undefined'){
+      window.addEventListener('resize',this.onViewport);
+      window.addEventListener('scroll',this.onViewport,{capture:true,passive:true});
+      window.visualViewport?.addEventListener('resize',this.onViewport);
+      if(typeof ResizeObserver!=='undefined'){this.resizeObserver=new ResizeObserver(this.onViewport);this.resizeObserver.observe(this.root);}
+      if(typeof MutationObserver!=='undefined'){
+        this.modalObserver=new MutationObserver(records=>{
+          if(records.some(record=>[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&node.matches('.modal-container'))))this.queueFit();
+        });
+        this.modalObserver.observe(document.body,{childList:true});
+      }
+    }
+    this.register(()=>{
+      this.closed=true;this.resizeObserver?.disconnect();this.modalObserver?.disconnect();
+      if(typeof window!=='undefined'){
+        window.removeEventListener('resize',this.onViewport);window.removeEventListener('scroll',this.onViewport,true);
+        window.visualViewport?.removeEventListener('resize',this.onViewport);
+        if(this.fitFrame!==null)window.cancelAnimationFrame(this.fitFrame);
+      }
+      this.root.remove();
+    });
+  }
+  compact() {return typeof window!=='undefined' && (Platform?.isMobile || window.matchMedia('(max-width:800px)').matches || window.matchMedia('(pointer:coarse)').matches);}
+  taskFolder(entries=this.data?.data||[]) {
+    const file=entries.find(e=>/(^|\/)Wayne to-do list\/任务\//.test(e.file.path))?.file;
+    const match=file?.path.match(/^(.*?Wayne to-do list\/任务)\//);
+    if(match)return match[1];
+    const active=this.app.workspace.getActiveFile?.();
+    const folder=active?.parent?.path||'';
+    return folder.endsWith('Wayne to-do list')?folder+'/任务':M.FOLDER;
+  }
+  queueFit() {
+    if(this.closed||!this.root.isConnected||typeof window==='undefined'||this.fitFrame!==null)return;
+    this.fitFrame=window.requestAnimationFrame(()=>{
+      this.fitFrame=null;if(this.closed||!this.root.isConnected)return;
+      if(this.root.classList.contains('is-mobile-compact')!==!!this.compact())this.onDataUpdated();
+      else if(this.compact())this.fitCompact();
+    });
   }
   onDataUpdated() {
     const left=this.root.scrollLeft;
@@ -388,6 +430,11 @@ module.exports = class TaskBoard extends BasesView {
       if(!buckets.has(status))buckets.set(status,[]);
       buckets.get(status).push(e);
     }
+    this.root.classList.toggle('is-mobile-compact',!!this.compact());
+    if(this.compact()){
+      this.renderCompact(buckets);this.store.inspectEmpty?.(this);return;
+    }
+    this.mobileList=null;this.shortAutoFitted=false;this.root.style.removeProperty('--wayne-mobile-height');
     for(const [status,items] of buckets) {
       const col=this.root.createDiv({cls:'wayne-task-column'});col.dataset.status=status;
       if(status==='已归档'&&!this.archiveOpen)col.classList.add('is-collapsed');
@@ -411,11 +458,122 @@ module.exports = class TaskBoard extends BasesView {
       body.scrollTop=this.columnScroll.get(status)||0;
       if(M.STATUSES.includes(status)) {
         const add=col.createEl('button',{text:'+ 添加任务',cls:'wayne-task-add'});
-        add.addEventListener('click',()=>this.store.promptCreate(status));
+        add.addEventListener('click',()=>this.store.promptCreate(status,this.taskFolder(entries)));
       }
     }
     this.root.scrollLeft=left;
     this.store.inspectEmpty?.(this);
+  }
+  renderCompact(buckets) {
+    this.mobileBuckets=buckets;
+    if(!buckets.has(this.mobileStatus))this.mobileStatus=buckets.keys().next().value;
+    this.root.dataset.status=this.mobileStatus;
+    const tabs=this.root.createDiv({cls:'wayne-mobile-statuses',attr:{role:'tablist','aria-label':'任务状态'}});
+    tabs.style.gridTemplateColumns=`repeat(${buckets.size},minmax(0,1fr))`;
+    for(const [status,items] of buckets){
+      const tab=tabs.createEl('button',{cls:'wayne-mobile-status',attr:{type:'button',role:'tab','aria-label':`${status||'未设置状态'}，${items.length}条任务`,'aria-selected':String(status===this.mobileStatus),tabindex:status===this.mobileStatus?'0':'-1'}});
+      tab.dataset.status=status;
+      tab.createSpan({text:status||'未设置状态',cls:'wayne-mobile-status-label'});
+      tab.createSpan({text:String(items.length),cls:'wayne-mobile-status-count'});
+      tab.addEventListener('click',()=>{this.mobileStatus=status;this.onDataUpdated();});
+      tab.addEventListener('keydown',event=>{
+        if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+        event.preventDefault();const statuses=[...buckets.keys()],index=statuses.indexOf(status);
+        const next=event.key==='Home'?0:event.key==='End'?statuses.length-1:(index+(event.key==='ArrowRight'?1:-1)+statuses.length)%statuses.length;
+        this.mobileStatus=statuses[next];this.onDataUpdated();this.root.querySelector('[role="tab"][aria-selected="true"]')?.focus({preventScroll:true});
+      });
+    }
+    this.mobileList=this.root.createDiv({cls:'wayne-mobile-list',attr:{role:'tabpanel','aria-label':this.mobileStatus||'未设置状态'}});
+    const footer=this.root.createDiv({cls:'wayne-mobile-footer'});
+    const add=footer.createEl('button',{text:'+ 任务',attr:{type:'button','aria-label':`在${this.mobileStatus}中添加任务`}});
+    add.disabled=!M.STATUSES.includes(this.mobileStatus);
+    add.addEventListener('click',()=>this.store.promptCreate(this.mobileStatus,this.taskFolder()));
+    this.mobilePrev=footer.createEl('button',{text:'‹',attr:{type:'button','aria-label':'上一页任务'}});
+    this.mobilePageLabel=footer.createSpan({cls:'wayne-mobile-page-label',attr:{'aria-live':'polite'}});
+    this.mobileNext=footer.createEl('button',{text:'›',attr:{type:'button','aria-label':'下一页任务'}});
+    this.mobilePrev.addEventListener('click',()=>this.changePage(-1));
+    this.mobileNext.addEventListener('click',()=>this.changePage(1));
+    this.fitCompact();this.queueFit();
+  }
+  fitCompact() {
+    if(!this.mobileList||this.closed)return;
+    if(document.querySelector('.modal-container')){this.renderCompactRows();return;}
+    const viewport=window.visualViewport;
+    const bottom=(viewport?.offsetTop||0)+(viewport?.height||window.innerHeight);
+    const short=(viewport?.height||window.innerHeight)<500;
+    if(!short)this.shortAutoFitted=false;
+    this.root.classList.toggle('is-short-viewport',short);
+    let reserve=short?72:80;
+    for(const el of document.querySelectorAll('.mobile-navbar,.mobile-toolbar')){
+      const box=el.getBoundingClientRect();
+      if(box.height>0&&box.height<160&&box.bottom>=bottom-100&&box.top>bottom/2)reserve=Math.max(reserve,bottom-box.top+8);
+    }
+    this.root.style.setProperty('--wayne-bottom-gap',`${reserve}px`);
+    const rowHeight=Math.max(short?60:64,Math.ceil(parseFloat(getComputedStyle(this.root).fontSize)*3.8));
+    this.root.style.setProperty('--wayne-mobile-row-height',`${rowHeight}px`);
+    let room=bottom-Math.max(this.root.getBoundingClientRect().top,viewport?.offsetTop||0)-reserve-8;
+    const minimum=rowHeight+(short?104:128);
+    this.root.style.setProperty('--wayne-mobile-height',`${Math.max(minimum,Math.floor(room))}px`);
+    if(room<minimum&&short&&!this.shortAutoFitted){
+      this.shortAutoFitted=true;
+      // Make one compact page reachable when landscape leaves too little space
+      // below the host note header. One anchor per orientation avoids fighting
+      // subsequent user scrolling or background data updates.
+      let owner=this.root.parentElement;
+      while(owner&&owner!==document.body&&!/(auto|scroll)/.test(getComputedStyle(owner).overflowY))owner=owner.parentElement;
+      owner=owner&&owner!==document.body?owner:document.scrollingElement;
+      if(owner)owner.scrollTop+=minimum-room;
+      room=bottom-Math.max(this.root.getBoundingClientRect().top,viewport?.offsetTop||0)-reserve-8;
+      this.root.style.setProperty('--wayne-mobile-height',`${Math.max(minimum,Math.floor(room))}px`);
+    }
+    const size=Math.max(1,Math.floor((this.mobileList.clientHeight+6)/(rowHeight+6)));
+    if(size!==this.mobilePageSize){
+      for(const [status,page] of this.mobilePages)this.mobilePages.set(status,Math.floor(page*this.mobilePageSize/size));
+      this.mobilePageSize=size;
+    }
+    this.renderCompactRows();
+  }
+  changePage(delta) {
+    this.mobilePages.set(this.mobileStatus,(this.mobilePages.get(this.mobileStatus)||0)+delta);this.renderCompactRows();
+  }
+  renderCompactRows() {
+    const items=this.mobileBuckets.get(this.mobileStatus)||[];
+    const pages=Math.max(1,Math.ceil(items.length/this.mobilePageSize));
+    const page=Math.max(0,Math.min(pages-1,this.mobilePages.get(this.mobileStatus)||0));
+    this.mobilePages.set(this.mobileStatus,page);this.mobileList.empty();
+    for(const entry of items.slice(page*this.mobilePageSize,(page+1)*this.mobilePageSize)){
+      const title=value(entry,'任务')||entry.file.basename;
+      const row=this.mobileList.createDiv({cls:'wayne-mobile-task'});
+      row.dataset.path=entry.file.path;
+      const open=row.createEl('button',{cls:'wayne-mobile-task-open',attr:{type:'button','aria-label':`打开任务：${title}`,title}});
+      open.createSpan({text:title,cls:'wayne-mobile-task-title'});
+      open.createSpan({text:`建 ${value(entry,'创建日期').slice(0,10)} · 编 ${value(entry,'更新日期').slice(0,10)}`,cls:'wayne-mobile-task-dates'});
+      open.addEventListener('click',()=>this.app.workspace.openLinkText(entry.file.path,'',false));
+      const more=row.createEl('button',{text:'···',cls:'wayne-mobile-task-more',attr:{type:'button','aria-haspopup':'dialog','aria-label':`操作任务：${title}`}});
+      more.addEventListener('click',()=>this.taskMenu(entry,this.mobileStatus));
+    }
+    if(!items.length)this.mobileList.createDiv({text:'这个状态下暂无任务',cls:'wayne-mobile-empty'});
+    this.mobilePrev.disabled=page===0;this.mobileNext.disabled=page===pages-1;
+    this.mobilePageLabel.setText(`${items.length?page+1:0} / ${items.length?pages:0} 页 · ${items.length}条`);
+    this.mobilePageLabel.setAttribute('aria-label',`${this.mobileStatus}，第${items.length?page+1:0}页，共${items.length?pages:0}页，${items.length}条任务`);
+  }
+  taskMenu(entry,status) {
+    const modal=new Modal(this.app),title=value(entry,'任务')||entry.file.basename;
+    modal.contentEl.addClass('wayne-task-menu');
+    modal.contentEl.createEl('h3',{text:title});
+    modal.contentEl.createDiv({text:`创建 ${value(entry,'创建日期')} · 更新 ${value(entry,'更新日期')}`,cls:'wayne-task-menu-dates'});
+    for(const key of ['项目','优先级','下一步'])if(value(entry,key))modal.contentEl.createDiv({text:`${key}：${value(entry,key)}`,cls:'wayne-task-menu-detail'});
+    const label=modal.contentEl.createEl('label',{text:'任务状态'});
+    const select=label.createEl('select',{attr:{'aria-label':'修改任务状态'}});
+    if(!M.STATUSES.includes(status))select.createEl('option',{text:status,value:status});
+    for(const s of M.STATUSES)select.createEl('option',{text:s,value:s});select.value=status;
+    const actions=modal.contentEl.createDiv({cls:'wayne-task-menu-actions'});
+    const rename=actions.createEl('button',{text:'改名',attr:{type:'button'}});
+    rename.addEventListener('click',()=>{modal.close();this.store.promptRename(entry.file,title);});
+    const save=actions.createEl('button',{text:'保存状态',cls:'mod-cta',attr:{type:'button'}});
+    save.addEventListener('click',async()=>{save.disabled=true;if(await this.move(entry.file,status,select.value))modal.close();else save.disabled=false;});
+    const close=actions.createEl('button',{text:'关闭',attr:{type:'button'}});close.addEventListener('click',()=>modal.close());
+    modal.open();
   }
   card(body,entry,status) {
     const card=body.createDiv({cls:'wayne-task-card'});
@@ -443,8 +601,8 @@ module.exports = class TaskBoard extends BasesView {
       for(const e of this.root.querySelectorAll('.is-drop-target'))e.classList.remove('is-drop-target');});
   }
   async move(file,oldStatus,status) {
-    try{await this.store.update(file,{'状态':status},{'状态':oldStatus});}
-    catch(e){new Notice('状态未修改：'+e.message,8000);this.onDataUpdated();}
+    try{await this.store.update(file,{'状态':status},{'状态':oldStatus});return true;}
+    catch(e){new Notice('状态未修改：'+e.message,8000);this.onDataUpdated();return false;}
   }
 };
 
