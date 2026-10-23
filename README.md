@@ -10,9 +10,13 @@ The folder and property names are currently fixed to the original workflow. The 
 
 ## Mobile layout
 
-On phones, all status tabs and counts stay visible above a compact task list. Each row retains its creation/update dates; open the note by tapping its title, or use the row's **···** menu to read its full title and details, rename it, or change status. The footer adds a task and pages backward/forward. Page size adapts to the available viewport height and bottom navigation, so a status with hundreds of tasks does not create a long vertical page. Desktop keeps its multi-column board and drag-and-drop.
+On phones, all status tabs and counts stay visible above a compact task list. Each row retains its creation/update dates; open the note by tapping its title, or use the row's **···** menu to read its full title and details, rename it, or change status. Each page holds **up to 20 tasks**. Scroll vertically inside the task list, then use the fixed footer to move to the next 20. The task-list height adapts to the available viewport and bottom navigation; status tabs and pagination remain visible. Desktop keeps its multi-column board and drag-and-drop.
 
-Task actions use the folder of the actual query entries, including when a synced vault is nested inside another folder. Existing type/ID checks and expected-state protection remain in place. Switching status or resizing retains a valid page; background updates also clamp the page if tasks were removed or moved. On a very short landscape viewport, the host note is anchored once to fit a page; subsequent user scrolling is respected.
+Task actions use the folder of the actual query entries, including when a synced vault is nested inside another folder. Existing type/ID checks and expected-state protection remain in place. Switching status or resizing retains a valid page and its list-scroll position; explicit page changes start at the top. Background updates clamp the page if tasks were removed or moved. On a very short landscape viewport, the host note is anchored once to fit a page; subsequent user scrolling is respected.
+
+## Syncing between devices
+
+Task titles, status, dates and other properties are stored in the same Markdown notes used by the table and board. Use your preferred sync client to pull before editing and push after saving; other devices update their views after receiving those note changes. The plugin itself makes no network requests. Device-specific mobile paging/scroll state is local to the current view, while task data remains shared.
 
 The `wayne-task-board` view is registered before asynchronous filesystem work, so restoring a mobile Bases tab does not depend on finding one fixed `.base` file during startup. After updating from a version that showed an unknown view type, restart Obsidian and reopen the board note.
 

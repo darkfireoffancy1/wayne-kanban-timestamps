@@ -375,9 +375,12 @@ module.exports = class TaskBoard extends BasesView {
     super(controller);this.type=TYPE;this.store=store;
     this.root=container.createDiv({cls:'wayne-bases-board'});this.dragged=null;
     this.archiveOpen=false;this.columnScroll=new Map();
-    this.mobileStatus='未开始';this.mobilePages=new Map();this.mobilePageSize=1;this.fitFrame=null;this.closed=false;this.shortAutoFitted=false;
+    this.mobileStatus='未开始';this.mobilePages=new Map();this.mobileScroll=new Map();this.mobilePageSize=20;this.fitFrame=null;this.closed=false;this.shortAutoFitted=false;
     this.root.setAttribute?.('contenteditable','false');
-    this.onViewport=()=>this.queueFit();
+    this.onViewport=event=>{
+      if(event?.type==='scroll'&&event.target?.nodeType&&this.mobileList?.contains(event.target))return;
+      this.queueFit();
+    };
     if(typeof this.app?.workspace?.on==='function')this.registerEvent(this.app.workspace.on('layout-change',this.onViewport));
     if(typeof window!=='undefined'){
       window.addEventListener('resize',this.onViewport);
@@ -419,6 +422,7 @@ module.exports = class TaskBoard extends BasesView {
     });
   }
   onDataUpdated() {
+    this.rememberMobileScroll();
     const left=this.root.scrollLeft;
     for(const el of this.root.querySelectorAll('.wayne-task-column-body'))this.columnScroll.set(el.dataset.status,el.scrollTop);
     this.root.empty();
@@ -484,6 +488,7 @@ module.exports = class TaskBoard extends BasesView {
       });
     }
     this.mobileList=this.root.createDiv({cls:'wayne-mobile-list',attr:{role:'tabpanel','aria-label':this.mobileStatus||'未设置状态'}});
+    this.mobileList.addEventListener('scroll',()=>this.rememberMobileScroll(),{passive:true});
     const footer=this.root.createDiv({cls:'wayne-mobile-footer'});
     const add=footer.createEl('button',{text:'+ 任务',attr:{type:'button','aria-label':`在${this.mobileStatus}中添加任务`}});
     add.disabled=!M.STATUSES.includes(this.mobileStatus);
@@ -493,11 +498,11 @@ module.exports = class TaskBoard extends BasesView {
     this.mobileNext=footer.createEl('button',{text:'›',attr:{type:'button','aria-label':'下一页任务'}});
     this.mobilePrev.addEventListener('click',()=>this.changePage(-1));
     this.mobileNext.addEventListener('click',()=>this.changePage(1));
-    this.fitCompact();this.queueFit();
+    this.fitCompact();this.renderCompactRows();this.queueFit();
   }
   fitCompact() {
     if(!this.mobileList||this.closed)return;
-    if(document.querySelector('.modal-container')){this.renderCompactRows();return;}
+    if(document.querySelector('.modal-container'))return;
     const viewport=window.visualViewport;
     const bottom=(viewport?.offsetTop||0)+(viewport?.height||window.innerHeight);
     const short=(viewport?.height||window.innerHeight)<500;
@@ -526,21 +531,29 @@ module.exports = class TaskBoard extends BasesView {
       room=bottom-Math.max(this.root.getBoundingClientRect().top,viewport?.offsetTop||0)-reserve-8;
       this.root.style.setProperty('--wayne-mobile-height',`${Math.max(minimum,Math.floor(room))}px`);
     }
-    const size=Math.max(1,Math.floor((this.mobileList.clientHeight+6)/(rowHeight+6)));
-    if(size!==this.mobilePageSize){
-      for(const [status,page] of this.mobilePages)this.mobilePages.set(status,Math.floor(page*this.mobilePageSize/size));
-      this.mobilePageSize=size;
-    }
-    this.renderCompactRows();
+  }
+  rememberMobileScroll() {
+    const list=this.mobileList;
+    if(list?.dataset.pageKey)this.mobileScroll.set(list.dataset.pageKey,list.scrollTop);
   }
   changePage(delta) {
-    this.mobilePages.set(this.mobileStatus,(this.mobilePages.get(this.mobileStatus)||0)+delta);this.renderCompactRows();
+    const pages=Math.max(1,Math.ceil((this.mobileBuckets.get(this.mobileStatus)||[]).length/this.mobilePageSize));
+    const current=this.mobilePages.get(this.mobileStatus)||0;
+    const next=Math.max(0,Math.min(pages-1,current+delta));
+    if(next===current)return;
+    this.rememberMobileScroll();this.mobilePages.set(this.mobileStatus,next);
+    this.mobileScroll.set(`${this.mobileStatus}:${next}`,0);this.renderCompactRows();
   }
   renderCompactRows() {
+    this.rememberMobileScroll();
     const items=this.mobileBuckets.get(this.mobileStatus)||[];
     const pages=Math.max(1,Math.ceil(items.length/this.mobilePageSize));
-    const page=Math.max(0,Math.min(pages-1,this.mobilePages.get(this.mobileStatus)||0));
+    const requested=this.mobilePages.get(this.mobileStatus)||0;
+    const page=Math.max(0,Math.min(pages-1,requested));
+    const scrollKey=`${this.mobileStatus}:${page}`;
+    if(page!==requested)this.mobileScroll.set(scrollKey,0);
     this.mobilePages.set(this.mobileStatus,page);this.mobileList.empty();
+    this.mobileList.dataset.pageKey=scrollKey;
     for(const entry of items.slice(page*this.mobilePageSize,(page+1)*this.mobilePageSize)){
       const title=value(entry,'任务')||entry.file.basename;
       const row=this.mobileList.createDiv({cls:'wayne-mobile-task'});
@@ -556,6 +569,8 @@ module.exports = class TaskBoard extends BasesView {
     this.mobilePrev.disabled=page===0;this.mobileNext.disabled=page===pages-1;
     this.mobilePageLabel.setText(`${items.length?page+1:0} / ${items.length?pages:0} 页 · ${items.length}条`);
     this.mobilePageLabel.setAttribute('aria-label',`${this.mobileStatus}，第${items.length?page+1:0}页，共${items.length?pages:0}页，${items.length}条任务`);
+    this.mobileList.scrollTop=this.mobileScroll.get(scrollKey)||0;
+    this.mobileScroll.set(scrollKey,this.mobileList.scrollTop);
   }
   taskMenu(entry,status) {
     const modal=new Modal(this.app),title=value(entry,'任务')||entry.file.basename;
